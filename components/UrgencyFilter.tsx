@@ -2,26 +2,34 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Task } from '@/lib/db';
-import { Check, X, AlertCircle } from 'lucide-react';
+import { Check, X, AlertCircle, Trash2 } from 'lucide-react';
 
 interface UrgencyFilterProps {
     tasks: Task[];
     onComplete: (urgentTasks: Task[]) => void;
+    onDismiss?: (task: Task) => void;
 }
 
-export default function UrgencyFilter({ tasks, onComplete }: UrgencyFilterProps) {
+export default function UrgencyFilter({ tasks, onComplete, onDismiss }: UrgencyFilterProps) {
     const [index, setIndex] = useState(0);
     const [urgentTasks, setUrgentTasks] = useState<Task[]>([]);
     const [direction, setDirection] = useState(0);
 
     const currentTask = tasks[index];
 
-    const handleDecision = (isUrgent: boolean) => {
-        setDirection(isUrgent ? 1 : -1);
+    const handleDecision = (decision: 'urgent' | 'defer' | 'dismiss') => {
+        setDirection(decision === 'urgent' ? 1 : decision === 'dismiss' ? 0 : -1);
 
-        if (isUrgent) {
+        if (decision === 'urgent') {
             setUrgentTasks(prev => [...prev, currentTask]);
         }
+
+        // Let parent know about dismissal if needed
+        if (decision === 'dismiss') {
+            onDismiss?.(currentTask);
+        }
+
+        const shouldShrink = decision === 'dismiss';
 
         setTimeout(() => {
             if (index < tasks.length - 1) {
@@ -29,7 +37,7 @@ export default function UrgencyFilter({ tasks, onComplete }: UrgencyFilterProps)
                 setDirection(0);
             } else {
                 // Finished
-                const finalUrgent = isUrgent ? [...urgentTasks, currentTask] : urgentTasks;
+                const finalUrgent = decision === 'urgent' ? [...urgentTasks, currentTask] : urgentTasks;
                 onComplete(finalUrgent);
             }
         }, 200); // Small delay for animation
@@ -70,7 +78,15 @@ export default function UrgencyFilter({ tasks, onComplete }: UrgencyFilterProps)
 
             <div className="flex gap-4 w-full">
                 <button
-                    onClick={() => handleDecision(false)}
+                    onClick={() => handleDecision('dismiss')}
+                    className="flex-0 p-6 rounded-xl bg-zinc-900 border border-zinc-800 hover:bg-red-500/10 hover:border-red-500 hover:text-red-500 transition-all group"
+                    title="Delete permanently"
+                >
+                    <Trash2 className="text-zinc-500 group-hover:text-red-500" size={32} />
+                </button>
+
+                <button
+                    onClick={() => handleDecision('defer')}
                     className="flex-1 flex flex-col items-center justify-center gap-2 py-6 rounded-xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 hover:border-zinc-700 transition-all group"
                 >
                     <X className="text-zinc-500 group-hover:text-zinc-300" size={32} />
@@ -78,7 +94,7 @@ export default function UrgencyFilter({ tasks, onComplete }: UrgencyFilterProps)
                 </button>
 
                 <button
-                    onClick={() => handleDecision(true)}
+                    onClick={() => handleDecision('urgent')}
                     className="flex-1 flex flex-col items-center justify-center gap-2 py-6 rounded-xl bg-zinc-900 border border-indigo-500/30 hover:bg-indigo-500/10 hover:border-indigo-500 transition-all group"
                 >
                     <Check className="text-indigo-400 group-hover:text-indigo-300" size={32} />

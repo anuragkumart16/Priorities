@@ -9,8 +9,9 @@ import DecisionSession from '@/components/DecisionSession';
 import ExecutionGate from '@/components/ExecutionGate';
 import FocusMode from '@/components/FocusMode';
 import { AnimatePresence, motion } from 'framer-motion';
+import { CheckCircle2 } from 'lucide-react';
 
-type SessionState = 'BRAIN_DUMP' | 'URGENCY' | 'DECISION' | 'GATE' | 'FOCUS';
+type SessionState = 'BRAIN_DUMP' | 'URGENCY' | 'DECISION' | 'GATE' | 'FOCUS' | 'ALL_DONE';
 
 export default function Page() {
   const [state, setState] = useState<SessionState>('BRAIN_DUMP');
@@ -43,30 +44,40 @@ export default function Page() {
   }, []);
 
   // 2. Urgency Filter -> Decision
+  // 2. Urgency Filter -> Decision
   const handleUrgencyComplete = useCallback(async (urgentTasks: Task[]) => {
-    // Update DB with urgency status
+    // We need to determine which tasks are left for the backlog.
+    // The sessionTasks state might contain items we just deleted (dismissed), so we must verify against DB.
+
     const urgentIds = new Set(urgentTasks.map(t => t.id));
-    const nonUrgentIds = sessionTasks.filter(t => !urgentIds.has(t.id)).map(t => t.id as number);
+    const potentialBacklogIds = sessionTasks
+      .filter(t => !urgentIds.has(t.id))
+      .map(t => t.id as number);
+
+    // Fetch only those that still exist in DB (excludes dismissed ones)
+    const validBacklogTasks = await db.tasks.where('id').anyOf(potentialBacklogIds).toArray();
+    const validBacklogIds = validBacklogTasks.map(t => t.id as number);
 
     await db.transaction('rw', db.tasks, async () => {
       // Mark urgent
       await Promise.all(urgentTasks.map(t => db.tasks.update(t.id!, { isUrgent: true })));
-      // Mark non-urgent
-      await Promise.all(nonUrgentIds.map(id => db.tasks.update(id, { isUrgent: false })));
+      // Mark non-urgent (only valid ones)
+      await Promise.all(validBacklogIds.map(id => db.tasks.update(id, { isUrgent: false })));
     });
 
     if (urgentTasks.length > 0) {
       setSessionTasks(urgentTasks);
       setSessionMode('urgent');
-    } else {
-      // Fallback: No urgent tasks, use all pending tasks (sessionTasks contains the full list)
-      // We might want to filter out any that were just marked non-urgent, but since *all* were just marked non-urgent
-      // (because urgentTasks is empty), we just use sessionTasks.
-      setSessionTasks(sessionTasks);
+      setState('DECISION');
+    } else if (validBacklogTasks.length > 0) {
+      // Fallback: No urgent tasks, use verified backlog
+      setSessionTasks(validBacklogTasks);
       setSessionMode('backlog');
+      setState('DECISION');
+    } else {
+      // No urgent tasks AND no backlog (everything dismissed)
+      setState('ALL_DONE');
     }
-
-    setState('DECISION');
   }, [sessionTasks]);
 
   // 3. Decision -> Gate
@@ -74,8 +85,6 @@ export default function Page() {
     setSelectedTask(task);
 
     // Log the decision start (optional, or log at end)
-    // We need to persist that we CHOSE this.
-    // But we haven't started executing yet.
 
     setState('GATE');
   }, []);
@@ -106,8 +115,8 @@ export default function Page() {
     // Log to history
     await db.logs.add({
       taskId: selectedTask.id,
-      chosenAt: new Date(), // This is technically inaccurate, chosen earlier, but fine for v1
-      method: 'manual', // We lost the methods state, for v1 assume manual or pass it through
+      chosenAt: new Date(),
+      method: 'manual',
       completedAt: new Date()
     });
 
@@ -134,7 +143,18 @@ export default function Page() {
 
         {state === 'URGENCY' && (
           <motion.div key="urgency" className="h-screen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, scale: 0.95 }}>
-            <UrgencyFilter tasks={sessionTasks} onComplete={handleUrgencyComplete} />
+            <UrgencyFilter
+              tasks={sessionTasks}
+              onComplete={handleUrgencyComplete}
+              onDismiss={async (task) => {
+                // Remove from DB immediately. 
+                // Do NOT update sessionTasks state here to avoid re-render/index mismatch in UrgencyFilter.
+                // The completion handler will verify DB existence.
+                if (task.id) {
+                  await db.tasks.delete(task.id);
+                }
+              }}
+            />
           </motion.div>
         )}
 
@@ -153,6 +173,24 @@ export default function Page() {
         {state === 'FOCUS' && selectedTask && (
           <motion.div key="focus" className="h-screen" initial={{ opacity: 0, scale: 1.1 }} animate={{ opacity: 1, scale: 1 }}>
             <FocusMode task={selectedTask} onComplete={handleFocusComplete} />
+          </motion.div>
+        )}
+
+        {state === 'ALL_DONE' && (
+          <motion.div key="done" className="h-screen flex flex-col items-center justify-center p-8 text-center space-y-6" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}>
+            <div className="rounded-full bg-green-500/10 p-6">
+              <CheckCircle2 size={64} className="text-green-500" />
+            </div>
+            <h1 className="text-3xl font-light text-white">All Clear</h1>
+            <p className="text-zinc-400 max-w-md">
+              You've handled the fires and cleared the clutter. Your mind is free.
+            </p>
+            <button
+              onClick={() => setState('BRAIN_DUMP')}
+              className="mt-8 px-6 py-3 rounded-full border border-zinc-800 text-zinc-400 hover:bg-zinc-900 transition-colors"
+            >
+              Start New Session
+            </button>
           </motion.div>
         )}
       </AnimatePresence>

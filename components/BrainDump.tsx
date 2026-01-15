@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, ArrowRight } from 'lucide-react';
+import QuickCapture from './QuickCapture';
 
 interface BrainDumpProps {
     onComplete: (items: string[]) => void;
@@ -98,6 +99,8 @@ export default function BrainDump({ onComplete, existingCount }: BrainDumpProps)
                     Process Items <ArrowRight size={18} />
                 </motion.button>
             )}
+
+            <QuickCapture />
         </div>
     );
 }

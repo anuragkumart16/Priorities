@@ -2,6 +2,7 @@
 import { Task } from '@/lib/db';
 import { motion } from 'framer-motion';
 import { CheckCircle2 } from 'lucide-react';
+import QuickCapture from '@/components/QuickCapture';
 
 interface FocusModeProps {
     task: Task;
@@ -42,6 +43,9 @@ export default function FocusMode({ task, onComplete }: FocusModeProps) {
                     </span>
                 </button>
             </div>
+
+            {/* Reusable Quick Capture */}
+            <QuickCapture />
         </div>
     );
 }
